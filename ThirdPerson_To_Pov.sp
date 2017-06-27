@@ -22,7 +22,7 @@ Blocking POV mode while boomed and made a workaround for client prediction error
 #include <sdkhooks>
 #include <clientprefs>
 
-#define PLUGIN_VERSION "1.2"
+#define PLUGIN_VERSION "1.3"
 
 
 static Handle:hCvar_TpMode = INVALID_HANDLE;
