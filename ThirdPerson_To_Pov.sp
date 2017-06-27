@@ -37,7 +37,6 @@ static bool:bTpModeDefault = true;
 static iCamRef[MAXPLAYERS+1];
 
 
-
 public Plugin:myinfo =
 {
     name = "ThirdPerson_To_POV",
@@ -111,7 +110,7 @@ public Hook_OnPostThinkPost(i)
 	
 	if(!bClientPov[i] || !IsPlayerAlive(i) || !bShouldBePov(i))
 	{
-		if(IsValidEntRef(iCamRef[i]))
+		if(!IsValidEntRef(iCamRef[i]))
 			return;
 			
 		iEntity = EntRefToEntIndex(iCamRef[i]);
