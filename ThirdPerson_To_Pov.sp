@@ -36,8 +36,7 @@ static bool:bTpModeDefault = true;
 
 static iCamRef[MAXPLAYERS+1];
 
-static bool:bBlockPov[MAXPLAYERS+1] = {false, ...};
-static bool:bAllowVomit[MAXPLAYERS+1] = {true, ...};
+
 
 public Plugin:myinfo =
 {
@@ -63,7 +62,6 @@ public OnPluginStart()
 	HookEvent("player_death", ePlayerCheck, EventHookMode_Pre);
 	HookEvent("player_spawn", ePlayerCheck);
 	HookEvent("player_team", ePlayerCheck);
-	HookEvent("player_now_it", eVomitedOn, EventHookMode_Pre);
 	
 	HookConVarChange(hCvar_TpMode, eConvarChanged);
 	HookConVarChange(hCvar_TpDefault, eConvarChanged);
@@ -104,93 +102,23 @@ public ePlayerCheck(Handle:hEvent, const String:sEventName[], bool:bDontBroadcas
 	iCamRef[iClient] = -1;
 }
 
-//boomer fix for client prediction errors Start for vomit texture
-public eVomitedOn(Handle:hEvent, const String:sEventName[], bool:bDontBroadcast)
-{	
-	static iClient;
-	iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
-	
-	if(iClient < 1 || iClient > MaxClients)
-		return;
-	
-	if(!IsClientInGame(iClient) || IsFakeClient(iClient) || !IsPlayerAlive(iClient) || GetClientTeam(iClient) !=2)
-		return;
-	
-	if(IsValidEntRef(iCamRef[iClient]))
-	{
-		static iEntity;
-		iEntity = EntRefToEntIndex(iCamRef[iClient]);
-		AcceptEntityInput(iEntity, "Disable", iClient);
-		AcceptEntityInput(iEntity, "kill");
-		iCamRef[iClient] = -1;
-	}
-	
-	if(!bAllowVomit[iClient])
-		SetEntPropFloat(iClient, Prop_Send, "m_itTimer", -1.0, 1);
-	
-	if(bBlockPov[iClient])
-		return;
-	
-	CreateTimer(0.7, ApplyVomit, GetClientUserId(iClient), TIMER_FLAG_NO_MAPCHANGE);
-	bBlockPov[iClient] = true;
-	bAllowVomit[iClient] = false;
-}
-
-public Action:ApplyVomit(Handle:hTimer, any:iUserID)
-{
-	static iClient;
-	iClient = GetClientOfUserId(iUserID);
-	
-	if(iClient < 1)
-		return Plugin_Stop;
-	
-	if(!IsClientInGame(iClient) || !IsPlayerAlive(iClient) || GetClientTeam(iClient) !=2)
-		return Plugin_Stop;
-	
-	SetEntPropFloat(iClient, Prop_Send, "m_itTimer", -1.0, 1);
-	bAllowVomit[iClient] = true;
-	
-	//credit to Timocop for logic_script
-	static iScriptLogic = INVALID_ENT_REFERENCE;
-	if(iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic)) 
-	{
-		iScriptLogic = EntIndexToEntRef(CreateEntityByName("logic_script"));
-		if(iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic))
-			SetFailState("Could not create 'logic_script'");
-
-		DispatchSpawn(iScriptLogic);
-	}
-	
-	static String:sBuffer[96];
-	Format(sBuffer, sizeof(sBuffer), "GetPlayerFromUserID(%d).HitWithVomit()", iUserID);
-	SetVariantString(sBuffer);
-	AcceptEntityInput(iScriptLogic, "RunScriptCode");
-	
-	bBlockPov[iClient] = false;
-	return Plugin_Stop;
-}
-//boomer fix for client prediction errors end
-
 public Hook_OnPostThinkPost(i)
 {
-	if(bBlockPov[i])
-		return;
-	
 	if(!IsPlayerAlive(i) || GetClientTeam(i) != 2 || !AreClientCookiesCached(i)) 
 		return;
 	
 	static iEntity;
 	
-	if(GetEntPropFloat(i, Prop_Send, "m_itTimer", 1) > -1.0 || !bClientPov[i] || !IsPlayerAlive(i) || !bShouldBePov(i))
+	if(!bClientPov[i] || !IsPlayerAlive(i) || !bShouldBePov(i))
 	{
-		if(!IsValidEntRef(iCamRef[i]))
+		if(IsValidEntRef(iCamRef[i]))
 			return;
-		
+			
 		iEntity = EntRefToEntIndex(iCamRef[i]);
 		AcceptEntityInput(iEntity, "Disable", i);
 		AcceptEntityInput(iEntity, "Kill");
 		return;
-	}		
+	}
 	
 	if(IsValidEntRef(iCamRef[i]))
 		return;
