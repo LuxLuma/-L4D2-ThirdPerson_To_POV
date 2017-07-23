@@ -22,7 +22,7 @@ Blocking POV mode while boomed and made a workaround for client prediction error
 #include <sdkhooks>
 #include <clientprefs>
 
-#define PLUGIN_VERSION "1.3.1"
+#define PLUGIN_VERSION "1.3.2"
 
 
 static Handle:hCvar_TpMode = INVALID_HANDLE;
@@ -330,9 +330,9 @@ public OnClientCookiesCached(iClient)
 	
 	static String:sCookie[3];
 	GetClientCookie(iClient, hCookie_PovPerf, sCookie, sizeof(sCookie));
-	if(StrEqual(sCookie, "\0", false) || StrEqual(sCookie, "0", false))
+	if(sCookie[0] == '\0' || StrEqual(sCookie, "0", false))
 	{
-		if(bTpModeDefault && StrEqual(sCookie, "\0", false))
+		if(bTpModeDefault && sCookie[0] == '\0')
 			bClientPov[iClient] = true;
 		else
 			bClientPov[iClient] = false;
