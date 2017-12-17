@@ -12,7 +12,16 @@ changed to PostThink from OnGameFrame
 added Cookiesaving
 
 1.2
-Blocking POV mode while boomed and made a workaround for client prediction errors for vomit texture on screen
+Deprecated
+
+1.3
+Reverted to 1.1
+
+1.4
+Made a 90% workaround with camera going else where when dying (lost packets could still cause it to bug or very low updaterate)
+
+1.5
+Added povgod command perma povmod
 */
 
 #pragma semicolon 1
@@ -22,7 +31,7 @@ Blocking POV mode while boomed and made a workaround for client prediction error
 #include <sdkhooks>
 #include <clientprefs>
 
-#define PLUGIN_VERSION "1.3.2"
+#define PLUGIN_VERSION "1.5"
 
 
 static Handle:hCvar_TpMode = INVALID_HANDLE;
@@ -31,8 +40,11 @@ static Handle:hCvar_TpDefault = INVALID_HANDLE;
 static bool:bClientPov[MAXPLAYERS+1] = {true, ...};
 static Handle:hCookie_PovPerf = INVALID_HANDLE;
 
+static Handle:hClientDisableView[MAXPLAYERS+1] = {INVALID_HANDLE, ...};
+
 static iTpMode = 1;
 static bool:bTpModeDefault = true;
+static bool:bPovGod[MAXPLAYERS+1] = false;
 
 static iCamRef[MAXPLAYERS+1];
 
@@ -52,20 +64,19 @@ public OnPluginStart()
 	hCookie_PovPerf = RegClientCookie("tp_to_pov_cookie", "", CookieAccess_Protected);
 	
 	CreateConVar("thirdperson_to_pov_version", PLUGIN_VERSION, "Thirdperson to point of view version", FCVAR_NOTIFY|FCVAR_SPONLY);
-	hCvar_TpMode = CreateConVar("tp_pov_mode", "1", "Thirdperson to point of view mode (0 = disable 1 = Semi Events(Being Pounced but not when getting up) 2 = full)", FCVAR_NOTIFY);
-	hCvar_TpDefault = CreateConVar("tp_pov_default_mode", "1", "Default mode when people join and have no cookie or no cookie option applied, 1 = on | 0 = off", FCVAR_NOTIFY);
+	hCvar_TpMode = CreateConVar("tp_pov_mode", "1", "Thirdperson to point of view mode (0 = disable 1 = Semi Events(Being Pounced but not when getting up) 2 = full)", FCVAR_NOTIFY, true, 0.0, true, 2.0);
+	hCvar_TpDefault = CreateConVar("tp_pov_default_mode", "1", "Default mode when people join and have no cookie or no cookie option applied, 1 = on | 0 = off, \n(no cookie option applied is when a client has never used cmds !povoff or !povon on server)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	
 	RegConsoleCmd("sm_povoff", PovOff, "turns pov off");
 	RegConsoleCmd("sm_povon", PovOn, "turns pov on");
+	RegConsoleCmd("sm_povgod", PovGod, "Keeps pov on nomatter what for survivor who used pov god for current round (Think you're a GOD well see)");
 	
-	HookEvent("player_death", ePlayerCheck, EventHookMode_Pre);
-	HookEvent("player_spawn", ePlayerCheck);
-	HookEvent("player_team", ePlayerCheck);
+	HookEvent("round_start", eRoundStart);
 	
 	HookConVarChange(hCvar_TpMode, eConvarChanged);
 	HookConVarChange(hCvar_TpDefault, eConvarChanged);
 	
-	AutoExecConfig(true, "ThirdPerson_To_POV1.2");
+	AutoExecConfig(true, "ThirdPerson_To_POV1.5");
 	CvarsChanged();
 }
 
@@ -80,68 +91,111 @@ CvarsChanged()
 	bTpModeDefault = GetConVarInt(hCvar_TpDefault) > 0;
 }
 
-public ePlayerCheck(Handle:hEvent, const String:sEventName[], bool:bDontBroadcast)
+public eRoundStart(Handle:hEvent, const String:sEventName[], bool:bDontBroadcast)
 {
-	static iClient;
-	iClient = GetClientOfUserId(GetEventInt(hEvent, "userid"));
-	
-	if(iClient < 1 || iClient > MaxClients)
-		return;
-	
-	if(!IsClientInGame(iClient) || IsFakeClient(iClient))
-		return;
-	
-	static iEntity;
-	if(!IsValidEntRef(iCamRef[iClient]))
-		return;
-	
-	iEntity = EntRefToEntIndex(iCamRef[iClient]);
-	AcceptEntityInput(iEntity, "Disable", iClient);
-	AcceptEntityInput(iEntity, "kill");
-	iCamRef[iClient] = -1;
+	for(new i = 1; i <= MaxClients; i++)
+	{
+		bPovGod[i] = false;
+		hClientDisableView[i] = INVALID_HANDLE;
+	}
 }
 
-public Hook_OnPostThinkPost(i)
+
+public Hook_OnPostThinkPost(iClient)
 {
-	if(!IsPlayerAlive(i) || GetClientTeam(i) != 2 || !AreClientCookiesCached(i)) 
+	if(!AreClientCookiesCached(iClient))//block everything until async stuff is done
 		return;
 	
-	static iEntity;
 	
-	if(!bClientPov[i] || !IsPlayerAlive(i) || !bShouldBePov(i))
+	if(!IsPlayerAlive(iClient) || GetClientTeam(iClient) != 2 || !bClientPov[iClient] || !bShouldBePov(iClient))
 	{
-		if(!IsValidEntRef(iCamRef[i]))
+		if(!IsValidEntRef(iCamRef[iClient]))
 			return;
+		
+		if(!IsPlayerAlive(iClient) || GetClientTeam(iClient) != 2)
+		{
+			if(hClientDisableView[iClient] != INVALID_HANDLE)
+				return;
 			
-		iEntity = EntRefToEntIndex(iCamRef[i]);
-		AcceptEntityInput(iEntity, "Disable", i);
-		AcceptEntityInput(iEntity, "Kill");
+			hClientDisableView[iClient] = CreateTimer(0.6, DisableView, GetClientUserId(iClient));
+		}
+		
+		DisableCam(iClient);
 		return;
 	}
+	else
+	{
+		if(!IsValidEntRef(iCamRef[iClient]))
+			if(!CreateCamera(iClient))
+				return;
+		
+		static iModelIndex[MAXPLAYERS+1] = {0, ...};		
+		if(iModelIndex[iClient] != GetEntProp(iClient, Prop_Data, "m_nModelIndex", 2))
+		{
+			iModelIndex[iClient] = GetEntProp(iClient, Prop_Data, "m_nModelIndex", 2);
+			SetVariantString("eyes");
+			AcceptEntityInput(EntRefToEntIndex(iCamRef[iClient]), "SetParentAttachment");
+		}
+		
+		
+		EnableCam(iClient);
+	}
+}
+
+public Action:DisableView(Handle:hTimer, any:iUserID)
+{
+	static iClient;
+	iClient = GetClientOfUserId(iUserID);
 	
-	if(IsValidEntRef(iCamRef[i]))
-		return;
+	if(iClient < 1 || iClient > MaxClients || !IsClientInGame(iClient) || !IsValidEntRef(iCamRef[iClient]) || bShouldBePov(iClient))
+	{
+		hClientDisableView[iClient] = INVALID_HANDLE;
+		return Plugin_Stop;
+	}
 	
+	AcceptEntityInput(EntRefToEntIndex(iCamRef[iClient]), "kill");
+	hClientDisableView[iClient] = INVALID_HANDLE;
+	return Plugin_Stop;
+}
+
+bool:CreateCamera(iClient)
+{
+	static iEntity;
 	iEntity = CreateEntityByName("point_viewcontrol_survivor");
 	if(iEntity < 1)
-		return;
+		return false;
 	
 	DispatchSpawn(iEntity);
+	
 	ActivateEntity(iEntity);
 	 
 	SetVariantString("!activator"); 
-	AcceptEntityInput(iEntity, "SetParent", i);
+	AcceptEntityInput(iEntity, "SetParent", iClient);
 	SetVariantString("eyes");
 	AcceptEntityInput(iEntity, "SetParentAttachment");
-	AcceptEntityInput(iEntity, "Enable", i);
 	
 	TeleportEntity(iEntity, Float:{-4.2, 0.0, 0.0}, NULL_VECTOR, NULL_VECTOR);
 	
-	iCamRef[i] = EntIndexToEntRef(iEntity);
+	iCamRef[iClient] = EntIndexToEntRef(iEntity);
+	
+	return true;
+}
+
+static DisableCam(iClient)
+{
+	return AcceptEntityInput(EntRefToEntIndex(iCamRef[iClient]), "Disable", iClient);
+}
+
+static EnableCam(iClient)
+{
+	return AcceptEntityInput(EntRefToEntIndex(iCamRef[iClient]), "Enable", iClient);
 }
 
 static bool:bShouldBePov(iClient)
 {
+	if(iTpMode != 0 && bPovGod[iClient])
+		return true;
+	
 	switch(iTpMode)
 	{
 		case 2:
@@ -151,6 +205,7 @@ static bool:bShouldBePov(iClient)
 	}
 	return false;
 }
+
 
 static bool:bShouldBePov2(iClient) 
 {
@@ -323,6 +378,19 @@ public Action:PovOn(iClient, iArgs)
 	return Plugin_Continue;
 }
 
+public Action:PovGod(iClient, iArgs)
+{
+	if(iClient < 1 || !IsClientInGame(iClient) || IsFakeClient(iClient))
+		return Plugin_Continue;
+	
+	if(bPovGod[iClient])
+		bPovGod[iClient] = false;
+	else
+		bPovGod[iClient] = true;
+	
+	return Plugin_Continue;
+}
+
 public OnClientCookiesCached(iClient)
 {
 	if(iClient < 1 || !IsClientConnected(iClient))
@@ -349,4 +417,10 @@ public OnClientPutInServer(iClient)
 		return;
 		
 	SDKHook(iClient, SDKHook_PostThinkPost, Hook_OnPostThinkPost);
+}
+
+public OnClientDisconnect(iClient)
+{	
+	bPovGod[iClient] = false;
+	hClientDisableView[iClient] = INVALID_HANDLE;
 }
