@@ -112,13 +112,10 @@ public Hook_OnPostThinkPost(iClient)
 		if(!IsValidEntRef(iCamRef[iClient]))
 			return;
 		
-		if(!IsPlayerAlive(iClient) || GetClientTeam(iClient) != 2)
-		{
-			if(hClientDisableView[iClient] != INVALID_HANDLE)
-				return;
+		if(hClientDisableView[iClient] != INVALID_HANDLE)
+			return;
 			
-			hClientDisableView[iClient] = CreateTimer(0.6, DisableView, GetClientUserId(iClient));
-		}
+		hClientDisableView[iClient] = CreateTimer(1.0, DisableView, GetClientUserId(iClient));
 		
 		DisableCam(iClient);
 		return;
@@ -136,7 +133,6 @@ public Hook_OnPostThinkPost(iClient)
 			SetVariantString("eyes");
 			AcceptEntityInput(EntRefToEntIndex(iCamRef[iClient]), "SetParentAttachment");
 		}
-		
 		
 		EnableCam(iClient);
 	}
@@ -235,7 +231,7 @@ static bool:bShouldBePov2(iClient)
 			else if(iTarget != iClient)
 				return true;
 		}
-		case 4, 6, 7, 8, 9, 10:
+		case 4, 5, 6, 7, 8, 9, 10:
 			return true;
 	}
 	
